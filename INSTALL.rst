@@ -32,7 +32,7 @@ Building Kwant requires
    C++.
 
 The following software is highly recommended though not strictly required:
- * `matplotlib <http://matplotlib.sourceforge.net/>`_ 1.1 or newer, for Kwant's
+ * `matplotlib <http://matplotlib.sourceforge.net/>`_ 1.5 or newer, for Kwant's
    plotting module and the tutorial,
  * `MUMPS <http://graal.ens-lyon.fr/MUMPS/>`_, a sparse linear algebra library
    that will in many cases speed up Kwant several times and reduce the memory

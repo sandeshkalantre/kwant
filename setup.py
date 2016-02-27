@@ -489,7 +489,7 @@ def main():
           include_dirs=include_dirs,
           setup_requires=['numpy > 1.6.1', 'nose >= 1.0'],
           install_requires=['numpy > 1.6.1', 'scipy >= 0.9', 'tinyarray'],
-          extras_require={'plotting': 'matplotlib >= 1.2'},
+          extras_require={'plotting': 'matplotlib >= 1.5'},
           classifiers=[c.strip() for c in CLASSIFIERS.split('\n')])
 
 if __name__ == '__main__':
