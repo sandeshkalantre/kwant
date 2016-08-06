@@ -616,7 +616,7 @@ def main():
                     'build_tut': build_tut,
                     'test': test},
           ext_modules=exts,
-          install_requires=['numpy > 1.6.1', 'scipy >= 0.11.0', 'tinyarray'],
+          install_requires=['numpy > 1.6.1', 'scipy >= 0.11.0', 'tinyarray >= 1.2.0'],
           extras_require={'plotting': 'matplotlib >= 1.2'},
           classifiers=[c.strip() for c in classifiers.split('\n')])
 
