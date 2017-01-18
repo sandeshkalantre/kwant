@@ -17,6 +17,7 @@ system in two or three dimensions.
 from collections import defaultdict
 import warnings
 import numpy as np
+import scipy
 import tinyarray as ta
 from scipy import spatial, interpolate
 from math import cos, sin, pi, sqrt
@@ -1653,6 +1654,157 @@ def bands(sys, args=(), momenta=65, file=None, show=True, dpi=None,
     else:
         fig = None
     ax.plot(momenta, energies)
+
+    if fig is not None:
+        return output_fig(fig, file=file, show=show)
+
+
+def interpolate_current(syst, current, sigma=1, gauss_range=6, n=3, a=None):
+    """Interpolate currents in a system onto a regular grid.
+
+    The system graph together with current intensities defines a "discrete"
+    current density field where the current density is non-zero only on the
+    straight lines that connect sites that are coupled by a hopping term.
+
+    To make this vector field easier to visualize and interpret at different
+    length scales, it is smoothed by convoluting it with a kernel function
+    that has a (Gaussian) pulse-like shape.
+
+    This function samples the smoothed field on a regular (square or cubic)
+    grid.
+
+    Parameters
+    ----------
+    syst : A finalized system
+        The system on which we are going to calculate the field.
+    current : '1D array of float'
+        Must contain the intensity on each hoppings in the same order that they
+        appear in syst.graph.
+    sigma : 'float'
+        Parameter of the Gaussian used to generate the field :
+        exp(-x**2/(2*sigma**2)), the unit of sigma is a.
+    gauss_range : int
+        Number of sigma after which we consider the Gaussian equal to 0.
+    n : int
+        Number of point the grid must have per sigma.
+    a : float
+        By default, the lengh of the shortest hoppings.
+
+    Returns
+    -------
+    region : list of the coordonates of the grid for each dimension
+    field : value of the generated field on the grid points
+    """
+    if not isinstance(syst, builder.FiniteSystem):
+        raise TypeError("The system needs to be finalized.")
+
+    if len(current) != syst.graph.num_edges:
+        raise ValueError("Current and hoppings arrays do not have the same"
+                         " lenght.")
+
+    # hops: hoppings (pairs of points)
+    dim = len(syst.sites[0].pos)
+    hops = np.empty((syst.graph.num_edges, 2, dim))
+    for k, (i, j) in enumerate(syst.graph):
+        hops[k][0] = syst.sites[i].pos
+        hops[k][1] = syst.sites[j].pos
+
+    # lens: scaled lengths of hoppings
+    # dirs: normalized directions of hoppings
+    dirs = hops[:, 1] - hops[:, 0]
+    lens = np.sqrt(np.sum(dirs * dirs, -1))
+    dirs /= lens[:, None]
+    if a == None:
+        a = min(lens)
+    sigma *= a
+    r = sigma * gauss_range
+    factor = 0.5 * pow(sigma * sqrt(2*pi), 1 - dim)
+    scale = 1 / (sigma * sqrt(2))
+    lens *= scale
+
+    # Create field array.
+    field_shape = np.zeros(dim + 1, int)
+    field_shape[dim] = dim
+    min_hops = np.min(hops, 1)
+    max_hops = np.max(hops, 1)
+    bbox_min = np.min(min_hops, 0)
+    bbox_max = np.max(max_hops, 0)
+    for d in range(dim):
+        field_shape[d] = int((bbox_max[d] - bbox_min[d])*n / sigma + 3*n)
+        if field_shape[d] % 2:
+            field_shape[d] += 1
+    field = np.zeros(field_shape)
+
+    region = [np.linspace(bbox_min[d] - sigma, bbox_max[d] + sigma,
+                          field_shape[d])
+              for d in range(dim)]
+
+    grid_density = (field_shape[:dim] - 1) / (bbox_max + 2*r - bbox_min)
+    slices = np.empty((len(hops), dim, 2), int)
+    slices[:, :, 0] = np.floor((min_hops - bbox_min) * grid_density)
+    slices[:, :, 1] = np.ceil((max_hops + 2*r - bbox_min) * grid_density)
+
+    # Interpolate the field for each hopping.
+    erf = scipy.special.erf
+    for i in range(len(hops)):
+        if not np.diff(slices[i]).all():
+            # Zero volume: nothing to do.
+            continue
+
+        field_slice = [slice(*slices[i, d]) for d in range(dim)]
+
+        # Coordinates of the grid points that are within range of the current
+        # hopping.
+        coords = np.meshgrid(*[region[d][field_slice[d]] for d in range(dim)],
+                             sparse=True, indexing='ij')
+        coords -= hops[i, 0]
+
+        # Convert "coords" into scaled cylindrical coordinates with regard to
+        # the hopping.
+        z = np.dot(coords, dirs[i])
+        rho = np.sqrt(np.sum(coords * coords) - z*z)
+        z *= scale
+        rho *= scale
+
+        magns = current[i] * factor * np.exp(-rho * rho)
+        magns *= erf(z) - erf(z - lens[i])
+
+        field[field_slice] += dirs[i] *  magns[..., None]
+
+    return region, field
+
+
+def plot_current_density(region, field, colorbar=True, cmap=None,
+                         file=None, show=True, dpi=None, fig_size=None,
+                         ax=None, pos_transform=None):
+    if len(region) != 2:
+        raise ValueError("Only 2D field can be ploted.")
+
+    # The default colormap is extremely ugly with streamplot.
+    if cmap is None:
+        cmap = matplotlib.cm.autumn
+
+    if ax is None:
+        fig = Figure()
+        if dpi is not None:
+            fig.set_dpi(dpi)
+        if fig_size is not None:
+            fig.set_figwidth(fig_size[0])
+            fig.set_figheight(fig_size[1])
+        ax = fig.add_subplot(1, 1, 1, aspect='equal')
+    else:
+        fig = None
+
+    Y, X = np.ogrid[region[0][0] : region[0][-1] : complex(0, len(region[0])),
+                    region[1][0] : region[1][-1] : complex(0, len(region[1]))]
+
+    speed = np.sqrt(np.power(field[:,:,0], 2) + np.power(field[:,:,1], 2))
+    image = ax.streamplot(Y.T, X.T, field[:,:,0].T, field[:,:,1].T,
+                          color=speed.T, linewidth=5*speed.T/speed.max(),
+                          cmap=cmap)
+
+    if colorbar:
+        fig.colorbar(image.lines)
 
     if fig is not None:
         return output_fig(fig, file=file, show=show)
