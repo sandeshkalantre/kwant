@@ -1,0 +1,137 @@
+--- original
++++ modified
+@@ -11,6 +11,9 @@
+ #  - operators
+ #  - plotting vector fields
+ 
++import _defs
++from contextlib import redirect_stdout
++
+ from math import sin, cos, tanh, pi
+ import itertools
+ import numpy as np
+@@ -79,7 +82,13 @@
+     return syst
+ 
+ 
+-def plot_vector_field(syst, params):
++def save_plot(fname):
++    for extension in ('.pdf', '.png'):
++        plt.savefig(fname + extension,
++                    dpi=_defs.dpi, bbox_inches='tight')
++
++
++def plot_vector_field(syst, params, fname=None):
+     xmin, ymin = min(s.tag for s in syst.sites)
+     xmax, ymax = max(s.tag for s in syst.sites)
+     x = list(range(xmin, xmax + 1))
+@@ -91,18 +100,24 @@
+ 
+     plt.quiver(x, y, *m_i, pivot='mid', scale=75)
+     plt.colorbar()
+-    plt.show()
++    if fname:
++        save_plot(fname)
++    else:
++        plt.show()
+ 
+ 
+-def plot_densities(syst, densities):
++def plot_densities(syst, densities, fname=None):
+     fig, axes = plt.subplots(1, len(densities))
+     for ax, (title, rho) in zip(axes, densities):
+         kwant.plotter.map(syst, rho, ax=ax)
+         ax.set_title(title)
+-    plt.show()
++    if fname:
++        save_plot(fname)
++    else:
++        plt.show()
+ 
+ 
+-def plot_currents(syst, currents):
++def plot_currents(syst, currents, fname=None):
+     fig, axes = plt.subplots(1, len(currents))
+     if not hasattr(axes, '__len__'):
+         axes = (axes,)
+@@ -111,7 +126,10 @@
+             *kwant.plotter.interpolate_current(syst, current),
+             ax=ax, colorbar=False)
+         ax.set_title(title)
+-    plt.show()
++    if fname:
++        save_plot(fname)
++    else:
++        plt.show()
+ 
+ 
+ def main():
+@@ -124,7 +142,7 @@
+     all_states = list(psi_from_left) + list(psi_from_right)
+     psi = psi_from_left[0]
+ 
+-    plot_vector_field(syst, dict(r0=20, delta=10))
++    plot_vector_field(syst, dict(r0=20, delta=10), fname='mag_field_direction')
+ 
+     # even (odd) indices correspond to spin up (down)
+     up, down = psi[::2], psi[1::2]
+@@ -149,7 +167,7 @@
+         ('$σ_0$', probability),
+         ('$σ_z$', spin_z),
+         ('$σ_y$', spin_y),
+-    ])
++    ], fname='spin_densities')
+ 
+     J_0 = kwant.operator.Current(syst)
+     J_z = kwant.operator.Current(syst, sigma_z)
+@@ -161,7 +179,7 @@
+     plot_currents(syst, [
+         ('$J_{σ_0}$', probability_current),
+         ('$J_{σ_z}$', spin_z_current),
+-    ])
++    ], fname='spin_currents')
+ 
+     def following_m_i(site, r0, delta):
+         m_i = field_direction(site.pos, r0, delta)
+@@ -175,7 +193,7 @@
+     plot_currents(syst, [
+         (r'$J_{\mathbf{m}_i}$', m_current),
+         ('$J_{σ_z}$', spin_z_current),
+-    ])
++    ], fname='spin_current_comparison')
+ 
+ 
+     def circle(site):
+@@ -184,7 +202,9 @@
+     rho_circle = kwant.operator.Density(syst, where=circle, sum=True)
+ 
+     dos_in_circle = sum(rho_circle(p) for p in all_states) / (2 * pi)
+-    print('density of states in circle:', dos_in_circle)
++    with open('circle_dos.txt', 'w') as f:
++        with redirect_stdout(f):
++            print('density of states in circle:', dos_in_circle)
+ 
+     def left_cut(site_to, site_from):
+         return site_from.pos[0] <= -39 and site_to.pos[0] > -39
+@@ -198,8 +218,10 @@
+     Jz_left = kwant.operator.Current(syst, sigma_z, where=left_cut, sum=True)
+     Jz_right = kwant.operator.Current(syst, sigma_z, where=right_cut, sum=True)
+ 
+-    print('J_left:', J_left(psi), ' J_right:', J_right(psi))
+-    print('Jz_left:', Jz_left(psi), ' Jz_right:', Jz_right(psi))
++    with open('current_cut.txt', 'w') as f:
++        with redirect_stdout(f):
++            print('J_left:', J_left(psi), ' J_right:', J_right(psi))
++            print('Jz_left:', Jz_left(psi), ' Jz_right:', Jz_right(psi))
+ 
+     J_m = kwant.operator.Current(syst, following_m_i)
+     J_z = kwant.operator.Current(syst, sigma_z)
+@@ -214,7 +236,7 @@
+     plot_currents(syst, [
+         (r'$J_{\mathbf{m}_i}$ (from left)', J_m_left),
+         (r'$J_{σ_z}$ (from left)', J_z_left),
+-    ])
++    ], fname='bound_current')
+ 
+ 
+ if __name__ == '__main__':
